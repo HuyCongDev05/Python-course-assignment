@@ -1,0 +1,13 @@
+# Thư viện giao diện người dùng
+PyQt5==5.15.10
+PyQt5-Qt5==5.15.2
+PyQt5_sip==12.18.0
+
+# Thư viện cơ sở dữ liệu và ORM
+SQLAlchemy==2.0.49
+PyMySQL==1.1.0
+greenlet==3.3.2
+
+# Tiện ích bổ sung
+python-dotenv==1.0.1
+typing_extensions==4.7.1
