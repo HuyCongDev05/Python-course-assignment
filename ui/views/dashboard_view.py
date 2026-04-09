@@ -155,7 +155,14 @@ class DashboardView(QWidget):
         layout.addLayout(analytics_layout)
 
     def refresh_stats(self):
+        # Tạo mới service mỗi lần refresh để đảm bảo đọc dữ liệu mới nhất từ DB
+        self.student_service = StudentService()
+        self.room_service = RoomService()
+        self.contract_service = ContractService()
+        self.payment_service = PaymentService()
+
         self.contract_service.refresh_contract_statuses()
+        self.contract_service.generate_monthly_payments()
 
         students = self.student_service.get_all_students()
         rooms = self.room_service.get_all_rooms()

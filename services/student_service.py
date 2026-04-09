@@ -1,5 +1,5 @@
-from datetime import date
 import re
+from datetime import date
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -64,6 +64,18 @@ def _calculate_contract_total(room_price, start_date, end_date):
         months += 1
     months = max(months, 1)
     return float(room_price or 0) * months
+
+
+def _calculate_default_end_date(start_date):
+    """Trả về ngày kết thúc mặc định = 6 tháng sau ngày bắt đầu."""
+    from datetime import date as _date
+    month = start_date.month + 6
+    year = start_date.year + (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    day = min(start_date.day, last_day)
+    return _date(year, month, day)
 
 
 def _raise_value_error(message):
@@ -234,54 +246,7 @@ class StudentService(BaseService):
         self._commit()
         return True
 
-    def register_student(self, username, password, student_id, room_id):
-        try:
-            username = _clean_text(username)
-            password = _clean_text(password)
-            student = self.find_student_by_student_code(student_id)
 
-            if not username or not password or not student:
-                return False, "Thông tin đăng ký không hợp lệ."
-            if self.db.query(User).filter(User.username == username).first():
-                return False, "Tên đăng nhập đã tồn tại."
-            if student.user_id:
-                return False, "Sinh viên này đã có tài khoản."
-
-            room = self.db.get(Room, room_id)
-            if not room:
-                return False, "Phòng không tồn tại."
-            if room.status == RoomStatus.MAINTENANCE:
-                return False, "Phòng đang bảo trì."
-            if room.current_occupancy >= room.capacity:
-                return False, "Phòng này đã đầy."
-
-            new_user = User(
-                username=username,
-                password=hash_password(password),
-                full_name=student.full_name,
-                role=UserRole.STUDENT,
-            )
-            self.db.add(new_user)
-            self.db.flush()
-
-            if student.room_id and student.room_id != room.id:
-                old_room = self.db.get(Room, student.room_id)
-                if old_room:
-                    old_room.current_occupancy = max(0, old_room.current_occupancy - 1)
-                    _sync_room_status(old_room, preserve_maintenance=True)
-
-            if student.room_id != room.id:
-                room.current_occupancy += 1
-                _sync_room_status(room)
-
-            student.user_id = new_user.id
-            student.room_id = room.id
-
-            self._commit()
-            return True, "Đăng ký thành công."
-        except Exception as exc:
-            self.db.rollback()
-            return False, f"Lỗi: {exc}"
 
     def get_available_rooms(self):
         return (
@@ -431,7 +396,9 @@ class RoomService(BaseService):
         self._commit()
         return True
 
-    def select_room_for_student(self, user_id, room_id):
+    def select_room_for_student(self, user_id, room_id, start_date=None, end_date=None):
+        from datetime import date as _date
+
         student = (
             self.db.query(Student)
             .options(joinedload(Student.room), joinedload(Student.user))
@@ -472,6 +439,34 @@ class RoomService(BaseService):
         room.current_occupancy += 1
         student.room_id = room.id
         _sync_room_status(room)
+
+        # --- Tạo hợp đồng và phiếu thanh toán tháng đầu ---
+        contract_start = start_date or _date.today()
+        contract_end = end_date or _calculate_default_end_date(contract_start)
+        total_amount = _calculate_contract_total(room.price, contract_start, contract_end)
+
+        new_contract = Contract(
+            student_id=student.id,
+            room_id=room.id,
+            start_date=contract_start,
+            end_date=contract_end,
+            total_amount=total_amount,
+            status="active",
+        )
+        self.db.add(new_contract)
+        self.db.flush()  # lấy new_contract.id
+
+        first_payment = Payment(
+            contract_id=new_contract.id,
+            amount=float(room.price),
+            payment_type=PaymentType.ROOM_FEE,
+            payment_date=contract_start,
+            status=PaymentStatus.UNPAID,
+            notes="Chưa xác nhận",
+        )
+        self.db.add(first_payment)
+        # --------------------------------------------------
+
         self._commit()
         return student
 
@@ -496,6 +491,50 @@ class ContractService(BaseService):
 
         if changed:
             self._commit()
+
+    def generate_monthly_payments(self):
+        """Tự động tạo phiếu thanh toán tiền phòng cho tháng hiện tại
+        nếu hợp đồng còn hiệu lực và chưa có phiếu nào trong tháng đó."""
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+
+        active_contracts = (
+            self.db.query(Contract)
+            .options(joinedload(Contract.room), joinedload(Contract.payments))
+            .filter(Contract.status == self.ACTIVE_STATUS)
+            .all()
+        )
+
+        created = 0
+        for contract in active_contracts:
+            # Kiểm tra đã có phiếu ROOM_FEE trong tháng này chưa
+            already_exists = any(
+                p.payment_type == PaymentType.ROOM_FEE
+                and p.payment_date >= month_start
+                and p.payment_date <= today
+                for p in contract.payments
+            )
+            if already_exists:
+                continue
+
+            room_price = float(contract.room.price) if contract.room else 0.0
+            if room_price <= 0:
+                continue
+
+            new_payment = Payment(
+                contract_id=contract.id,
+                amount=room_price,
+                payment_type=PaymentType.ROOM_FEE,
+                payment_date=month_start,
+                status=PaymentStatus.UNPAID,
+                notes="Chưa xác nhận",
+            )
+            self.db.add(new_payment)
+            created += 1
+
+        if created:
+            self._commit()
+        return created
 
     def get_all_contracts(self, keyword=None, status=None):
         self.refresh_contract_statuses()

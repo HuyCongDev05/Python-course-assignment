@@ -121,6 +121,9 @@ class PaymentView(QWidget):
             self.btn_add.hide()
 
     def load_payments(self):
+        # Tạo service mới mỗi lần load để tránh dùng session SQLAlchemy cũ
+        # (session cũ cache dữ liệu, không thấy phiếu được tạo bởi service khác)
+        self.payment_service = PaymentService()
         payments = self.payment_service.get_all_payments(self.search_input.text(), self.status_filter.currentData())
         if self.user and self.user.role == UserRole.STUDENT:
             payments = [

@@ -105,6 +105,7 @@ class ContractView(QWidget):
         layout.addWidget(self.table)
 
     def load_contracts(self):
+        self.contract_service = ContractService()
         contracts = self.contract_service.get_all_contracts(self.search_input.text(), self.status_filter.currentData())
         self.populate_table(contracts)
 

@@ -20,6 +20,7 @@ from ui.widgets.searchable_combo_box import SearchableComboBox, style_combo_popu
 class ContractDialog(QDialog):
     def __init__(self, parent=None, contract=None, students=None, rooms=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.contract = contract
         self.students = students or []
         self.rooms = rooms or []

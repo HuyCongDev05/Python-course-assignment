@@ -11,7 +11,6 @@ from ui.views.main_window import MainWindow
 from ui.views.register_view import RegisterView
 from utils.session import clear_session, load_session, save_session
 
-
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -76,7 +75,12 @@ class DormManagerApp:
 
     def show_main_window(self, user_or_id):
         """Mở cửa sổ chính của ứng dụng cho người dùng tương ứng."""
-        user = self._resolve_user(user_or_id)
+        # Nếu đã là User object (từ register), dùng thẳng; chỉ tra DB khi nhận ID
+        from models import User as UserModel
+        if isinstance(user_or_id, UserModel):
+            user = user_or_id
+        else:
+            user = self._resolve_user(user_or_id)
         if not user:
             QMessageBox.critical(
                 self.register_view if self.register_view.isVisible() else self.login_view,

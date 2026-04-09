@@ -22,6 +22,7 @@ from ui.widgets.searchable_combo_box import style_combo_popups
 class PaymentDialog(QDialog):
     def __init__(self, parent=None, payment=None, contracts=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.payment = payment
         self.contracts = contracts or []
         self.action = "save"

@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
 from models import UserRole
 from services.student_service import RoomService, StudentService
 from ui.dialogs.room_dialog import RoomDialog
+from ui.dialogs.student_contract_dialog import StudentContractDialog
 from ui.widgets.hover_table_widget import HoverTableWidget
 from ui.widgets.searchable_combo_box import style_combo_popups
 from utils.formatters import format_currency, room_status_label
@@ -248,18 +249,23 @@ class RoomView(QWidget):
             QMessageBox.warning(self, "Không tìm thấy dữ liệu", "Phòng đã chọn không còn tồn tại.")
             return
 
-        reply = QMessageBox.question(
-            self,
-            "Xác nhận chọn phòng",
-            f"Chọn phòng {room.room_number} làm phòng lưu trú hiện tại?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
+        # Mở dialog nhập ngày hợp đồng — thay thế hộp xác nhận đơn giản
+        dialog = StudentContractDialog(self, room=room)
+        if dialog.exec_() != StudentContractDialog.Accepted:
             return
 
+        start_date = dialog.get_start_date()
+        end_date = dialog.get_end_date()
+
         try:
-            self.room_service.select_room_for_student(self.user.id, room_id)
+            self.room_service.select_room_for_student(self.user.id, room_id, start_date, end_date)
             self.load_rooms()
-            QMessageBox.information(self, "Cập nhật thành công", "Phòng ở đã được cập nhật vào hồ sơ của bạn.")
+            QMessageBox.information(
+                self,
+                "Đăng ký thành công",
+                f"Đã chọn phòng {room.room_number}.\n"
+                f"Hợp đồng lưu trú và phiếu thanh toán tháng đầu đã được tạo tự động.",
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Không thể chọn phòng", str(exc))
+

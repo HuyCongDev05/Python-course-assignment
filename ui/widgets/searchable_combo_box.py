@@ -30,8 +30,8 @@ class SearchableComboBox(QComboBox):
         self._popup.setAttribute(Qt.WA_StyledBackground, True)
 
         popup_layout = QVBoxLayout(self._popup)
-        popup_layout.setContentsMargins(10, 10, 10, 10)
-        popup_layout.setSpacing(8)
+        popup_layout.setContentsMargins(1, 1, 1, 1)
+        popup_layout.setSpacing(6)
 
         self._search_input = QLineEdit(self._popup)
         self._search_input.setObjectName("ComboSearchInput")
@@ -151,15 +151,15 @@ class SearchableComboBox(QComboBox):
         list_height = min(item_count, 7) * row_height + 10
         self._list_widget.setFixedHeight(list_height)
 
-        popup_width = max(self.width(), 420)
-        popup_height = self._search_input.sizeHint().height() + list_height + 28
+        popup_width = self.width()
+        popup_height = self._search_input.sizeHint().height() + list_height + 20
 
         below = self.mapToGlobal(self.rect().bottomLeft())
         above = self.mapToGlobal(self.rect().topLeft())
         screen = QApplication.desktop().availableGeometry(self)
 
         x_pos = below.x()
-        y_pos = below.y() + 6
+        y_pos = below.y()
 
         if x_pos + popup_width > screen.right() - 12:
             x_pos = max(screen.left() + 12, screen.right() - popup_width - 12)

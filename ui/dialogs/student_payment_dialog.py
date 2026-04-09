@@ -12,14 +12,12 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
     QVBoxLayout,
 )
 
 from models import PaymentStatus
 from services.student_service import ONLINE_PAYMENT_PENDING_NOTE, is_online_payment_pending_note
 from utils.formatters import format_currency, format_date, payment_note_label, payment_status_label, payment_type_label
-
 
 MB_BANK_ACCOUNT_NAME = "Nguyễn Huy Công"
 MB_BANK_NAME = "MB Bank"
@@ -159,7 +157,7 @@ def build_mb_bank_badge_pixmap(width=148, height=50):
     return pixmap
 
 
-def load_payment_qr_pixmap(max_width=560, max_height=680):
+def load_payment_qr_pixmap(max_width=260, max_height=260):
     for filename in PAYMENT_QR_CANDIDATES:
         candidate_path = _resource_path("images", filename)
         if not os.path.exists(candidate_path):
@@ -174,29 +172,32 @@ def load_payment_qr_pixmap(max_width=560, max_height=680):
 class StudentPaymentQrDialog(QDialog):
     def __init__(self, parent=None, payment=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.payment = payment
         self.confirmed = False
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("QR thanh toán")
-        self.setFixedSize(760, 980)
+        self.setFixedSize(620, 480)
         self.setObjectName("EntityDialog")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(18)
+        layout.setSpacing(16)
 
+        # --- Header ---
         header = QFrame()
         header.setObjectName("DialogHero")
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(18, 18, 18, 18)
+        header_layout.setContentsMargins(18, 14, 18, 14)
 
         title_row = QHBoxLayout()
         title_wrap = QVBoxLayout()
+        title_wrap.setSpacing(2)
         title = QLabel("Thanh toán online")
         title.setObjectName("DialogTitle")
-        subtitle = QLabel("Quét mã QR bên dưới để chuyển khoản. Sau khi chuyển khoản xong, bấm “Đã thanh toán”.")
+        subtitle = QLabel('Quét mã QR để chuyển khoản, sau đó bấm "Đã thanh toán".')
         subtitle.setObjectName("DialogSubtitle")
         subtitle.setWordWrap(True)
         title_wrap.addWidget(title)
@@ -210,24 +211,11 @@ class StudentPaymentQrDialog(QDialog):
         header_layout.addLayout(title_row)
         layout.addWidget(header)
 
-        bank_panel = QFrame()
-        bank_panel.setObjectName("QrBankPanel")
-        bank_layout = QGridLayout(bank_panel)
-        bank_layout.setContentsMargins(18, 18, 18, 18)
-        bank_layout.setHorizontalSpacing(18)
-        bank_layout.setVerticalSpacing(12)
+        # --- Body: QR bên trái | Thông tin bên phải ---
+        body = QHBoxLayout()
+        body.setSpacing(18)
 
-        self._add_bank_info(bank_layout, 0, "Chủ tài khoản", MB_BANK_ACCOUNT_NAME)
-        self._add_bank_info(bank_layout, 1, "Ngân hàng", MB_BANK_NAME)
-        self._add_bank_info(bank_layout, 2, "Nội dung CK", f"TT PAYMENT {getattr(self.payment, 'id', '--')}")
-        layout.addWidget(bank_panel)
-
-        qr_frame = QFrame()
-        qr_frame.setObjectName("PaymentQrPanel")
-        qr_layout = QVBoxLayout(qr_frame)
-        qr_layout.setContentsMargins(14, 14, 14, 14)
-        qr_layout.setSpacing(14)
-
+        # QR image
         contract = self.payment.contract if self.payment else None
         room = contract.room if contract and contract.room else None
         student = contract.student if contract and contract.student else None
@@ -244,56 +232,72 @@ class StudentPaymentQrDialog(QDialog):
         qr_label = QLabel()
         qr_label.setAlignment(Qt.AlignCenter)
         qr_label.setObjectName("PaymentQrImage")
-        qr_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        static_qr_pixmap = load_payment_qr_pixmap(max_width=600, max_height=720)
+        static_qr_pixmap = load_payment_qr_pixmap(max_width=240, max_height=240)
         if static_qr_pixmap is not None:
             qr_label.setPixmap(static_qr_pixmap)
             qr_label.setFixedSize(static_qr_pixmap.size())
         else:
-            fallback_pixmap = build_qr_pixmap(payload, size=560)
+            fallback_pixmap = build_qr_pixmap(payload, size=240)
             qr_label.setPixmap(fallback_pixmap)
             qr_label.setFixedSize(fallback_pixmap.size())
 
+        body.addWidget(qr_label, 0, Qt.AlignTop | Qt.AlignHCenter)
+
+        # Info panel bên phải
+        info_panel = QFrame()
+        info_panel.setObjectName("QrBankPanel")
+        info_layout = QVBoxLayout(info_panel)
+        info_layout.setContentsMargins(16, 16, 16, 16)
+        info_layout.setSpacing(14)
+
+        bank_grid = QGridLayout()
+        bank_grid.setHorizontalSpacing(12)
+        bank_grid.setVerticalSpacing(10)
+        self._add_bank_info(bank_grid, 0, "Chủ tài khoản", MB_BANK_ACCOUNT_NAME)
+        self._add_bank_info(bank_grid, 1, "Ngân hàng", MB_BANK_NAME)
+        self._add_bank_info(bank_grid, 2, "Nội dung CK", f"TT PAYMENT {getattr(self.payment, 'id', '--')}")
+        info_layout.addLayout(bank_grid)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName("Separator")
+        info_layout.addWidget(sep)
+
         amount_label = QLabel(f"Số tiền: {format_currency(self.payment.amount if self.payment else 0)}")
         amount_label.setObjectName("SectionTitle")
-        amount_label.setAlignment(Qt.AlignCenter)
+        amount_label.setWordWrap(True)
+        info_layout.addWidget(amount_label)
 
         room_label = QLabel(
-            f"Hóa đơn phòng {getattr(room, 'room_number', '--')} | {getattr(student, 'full_name', '--') or '--'}"
+            f"Phòng {getattr(room, 'room_number', '--')}  ·  {getattr(student, 'full_name', '--') or '--'}"
         )
         room_label.setObjectName("SectionHint")
-        room_label.setAlignment(Qt.AlignCenter)
         room_label.setWordWrap(True)
+        info_layout.addWidget(room_label)
 
         scan_hint = QLabel("Quét bằng ứng dụng MB Bank hoặc bất kỳ ứng dụng ngân hàng nào hỗ trợ VietQR.")
         scan_hint.setObjectName("SectionHint")
-        scan_hint.setAlignment(Qt.AlignCenter)
         scan_hint.setWordWrap(True)
+        info_layout.addWidget(scan_hint)
 
-        qr_layout.addWidget(qr_label, 0, Qt.AlignCenter)
-        qr_layout.addWidget(amount_label)
-        qr_layout.addWidget(room_label)
-        qr_layout.addWidget(scan_hint)
-        layout.addWidget(qr_frame)
+        info_layout.addStretch()
+        body.addWidget(info_panel, 1)
+        layout.addLayout(body)
 
-        note = QLabel("Nếu cần thanh toán tiền mặt, vui lòng đến văn phòng kế toán trường để nộp trực tiếp.")
+        # --- Note & Actions ---
+        note = QLabel("Nếu cần thanh toán tiền mặt, vui lòng đến văn phòng kế toán để nộp trực tiếp.")
         note.setWordWrap(True)
         note.setObjectName("SectionHint")
         layout.addWidget(note)
 
-        layout.addStretch()
-
         actions = QHBoxLayout()
         actions.addStretch()
-
         btn_close = QPushButton("Đóng")
         btn_close.clicked.connect(self.reject)
-
         btn_confirm = QPushButton("Đã thanh toán")
         btn_confirm.setObjectName("PrimaryButton")
         btn_confirm.clicked.connect(self.handle_confirm)
-
         actions.addWidget(btn_close)
         actions.addWidget(btn_confirm)
         layout.addLayout(actions)

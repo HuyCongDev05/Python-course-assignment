@@ -120,7 +120,7 @@ class RegisterView(QWidget):
             self.username_input.clear()
             self.password_input.clear()
             self.student_id_input.clear()
-            self.register_success.emit(user.id)
+            self.register_success.emit(user)  # emit toàn bộ user object, không dùng user.id
             return
 
         if message.startswith("Lỗi:"):

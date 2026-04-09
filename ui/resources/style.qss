@@ -405,7 +405,10 @@ QPushButton#DangerButton:hover {
 QTableWidget {
     background: #fffdfa;
     border: 1px solid #e4d7c5;
-    border-radius: 22px;
+    border-top-left-radius: 22px;
+    border-top-right-radius: 22px;
+    border-bottom-left-radius: 22px;
+    border-bottom-right-radius: 22px;
     gridline-color: #efe6da;
     alternate-background-color: #fbf6f0;
     outline: none;
@@ -416,6 +419,12 @@ QTableCornerButton::section {
     border: none;
 }
 
+QHeaderView {
+    background-color: transparent;
+    border-top-left-radius: 22px;
+    border-top-right-radius: 22px;
+}
+
 QHeaderView::section {
     background: #f7efe3;
     color: #55616c;
@@ -423,6 +432,14 @@ QHeaderView::section {
     border-bottom: 1px solid #e4d7c5;
     padding: 12px;
     font-weight: 700;
+}
+
+QHeaderView::section:horizontal:first {
+    border-top-left-radius: 22px;
+}
+
+QHeaderView::section:horizontal:last {
+    border-top-right-radius: 22px;
 }
 
 QTableWidget::item {

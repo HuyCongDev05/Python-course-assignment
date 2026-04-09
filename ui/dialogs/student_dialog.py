@@ -18,6 +18,7 @@ from ui.widgets.searchable_combo_box import style_combo_popups
 class StudentDialog(QDialog):
     def __init__(self, parent=None, student=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.student = student
         self.action = "save"
         self.init_ui()
