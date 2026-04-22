@@ -21,6 +21,9 @@
 - **Quản lý Thanh toán (Payment Management)**:
   - Lập hóa đơn tiền phòng, điện, nước hàng tháng.
   - Ghi nhận và theo dõi lịch sử thanh toán của từng sinh viên.
+- **🤖 Trợ lý AI (AI Chatbot)**:
+  - Tích hợp Google Gemini AI để hỗ trợ sinh viên tra cứu thông tin cá nhân, phòng ở, hợp đồng và các khoản thanh toán
+    một cách thông minh và tự nhiên.
 - **Bảng điều khiển (Dashboard)**:
   - Tổng hợp số liệu thống kê nhanh về tình trạng phòng và số lượng sinh viên.
 
@@ -32,6 +35,7 @@
 - **Giao diện (UI)**: PyQt5 với phong cách thiết kế hiện đại (Custom QSS).
 - **Cơ sở dữ liệu**: MySQL Server.
 - **ORM**: SQLAlchemy (Giúp tương tác database an toàn, tối ưu hiệu suất).
+- **AI Integration**: Google Generative AI (Gemini 2.5 Flash).
 - **Tiện ích**: `pymysql`, `python-dotenv`, `bcrypt`.
 
 ---
@@ -41,16 +45,17 @@
 ```text
 ├── config/             # Cấu hình kết nối MySQL & SQLAlchemy
 ├── models/             # Định nghĩa các bảng Database (ORM Models)
-├── services/           # Xử lý logic nghiệp vụ xử lý dữ liệu
+├── services/           # Xử lý logic nghiệp vụ, tích hợp AI Chatbot
 ├── ui/                 # Giao diện người dùng
 │   ├── resources/      # Các tệp tài nguyên, CSS (style.qss)
 │   └── views/          # Mã nguồn các màn hình chức năng
 ├── utils/              # Các hàm tiện ích (Bảo mật, định dạng dữ liệu)
-├── .env                # Cấu hình biến môi trường và thông tin kết nối DB
+├── .env                # Cấu hình biến môi trường, API keys và thông tin kết nối DB
 ├── db_setup.py         # Script khởi tạo cơ sở dữ liệu ban đầu
 ├── main.py             # Điểm khởi chạy ứng dụng chính
 ├── requirements.txt    # Danh sách các thư viện cần cài đặt
-└── README.md           # Tài liệu hướng dẫn dự án
+├── README.md           # Tài liệu hướng dẫn dự án (tổng quan)
+└── README_TECHNICAL.md # Tài liệu kiến trúc kỹ thuật chi tiết
 ```
 
 ---
@@ -69,7 +74,7 @@ pip install -r requirements.txt
 
 ### 3. Cấu hình môi trường
 
-Sao chép tệp cấu hình mẫu và điền thông tin kết nối MySQL của bạn:
+Sao chép tệp cấu hình mẫu và điền thông tin kết nối MySQL của bạn cùng với API key của Google AI Studio:
 
 ```bash
 cp .env.example .env
@@ -79,8 +84,10 @@ Mở tệp `.env` và cập nhật các thông số sau:
 - `DB_HOST`: Địa chỉ Database (thường là `localhost`)
 - `DB_USER`: Tên đăng nhập SQL (mặc định là `root`)
 - `DB_PASSWORD`: Mật khẩu của bạn
-- `DB_NAME`: `dorm_management`
+- `DB_NAME`: Tên cơ sở dữ liệu (ví dụ: `dorm_management`)
 - `DB_PORT`: `3306`
+- `GOOGLE_AI_STUDIO_API_KEY`: Lấy API Key từ [Google AI Studio](https://aistudio.google.com/app/apikey) để sử dụng tính
+  năng Chatbot.
 
 ---
 
@@ -98,6 +105,13 @@ Chạy tệp `main.py` để mở giao diện quản lý:
 ```bash
 python main.py
 ```
+
+---
+
+## 📚 Tài liệu bổ sung
+
+- Để tìm hiểu chi tiết về kiến trúc hệ thống, quy trình xử lý dữ liệu và thiết kế giao diện, vui lòng
+  xem [README_TECHNICAL.md](README_TECHNICAL.md).
 
 ---
 

@@ -2,6 +2,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHeaderView,
     QHBoxLayout,
@@ -16,6 +17,7 @@ from PyQt5.QtWidgets import (
 )
 
 from models import UserRole
+from services.data_exchange_service import DataExchangeService
 from services.student_service import RoomService, StudentService
 from ui.dialogs.room_dialog import RoomDialog
 from ui.dialogs.student_contract_dialog import StudentContractDialog
@@ -29,7 +31,9 @@ class RoomView(QWidget):
         super().__init__()
         self.user = user
         self.is_student_mode = bool(user and user.role == UserRole.STUDENT)
+        self.is_admin_mode = bool(user and user.role == UserRole.ADMIN)
         self.room_service = RoomService()
+        self.exchange_service = DataExchangeService()
         self.student_service = StudentService() if self.is_student_mode else None
         self.current_student = None
         self.init_ui()
@@ -58,14 +62,24 @@ class RoomView(QWidget):
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
 
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+
+        self.btn_import = QPushButton("Nạp từ Excel")
+        self.btn_import.clicked.connect(self.import_rooms_from_excel)
+        self.btn_import.setVisible(self.is_admin_mode and not self.is_student_mode)
+
         self.btn_primary = QPushButton("Chọn phòng đã chọn" if self.is_student_mode else "Thêm phòng")
         self.btn_primary.setObjectName("PrimaryButton")
         self.btn_primary.clicked.connect(self.select_room if self.is_student_mode else self.add_room_dialog)
         if self.is_student_mode:
             self.btn_primary.setEnabled(False)
 
+        actions.addWidget(self.btn_import)
+        actions.addWidget(self.btn_primary)
+
         header_layout.addLayout(title_wrap, 1)
-        header_layout.addWidget(self.btn_primary, 0)
+        header_layout.addLayout(actions, 0)
         layout.addWidget(header)
 
         toolbar = QHBoxLayout()
@@ -269,3 +283,43 @@ class RoomView(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "Không thể chọn phòng", str(exc))
 
+    def import_rooms_from_excel(self):
+        if not self.is_admin_mode or self.is_student_mode:
+            QMessageBox.warning(self, "Không có quyền", "Chỉ quản trị viên mới được phép nạp dữ liệu phòng.")
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Chọn file Excel phòng",
+            "",
+            "Excel Workbook (*.xlsx)",
+        )
+        if not file_path:
+            return
+
+        try:
+            summary = self.exchange_service.import_rooms_from_excel(file_path)
+            self.load_rooms()
+            self.show_import_summary(summary)
+        except Exception as exc:
+            QMessageBox.critical(self, "Không thể nạp dữ liệu", str(exc))
+
+    def show_import_summary(self, summary):
+        if summary.skipped_count == 0:
+            QMessageBox.information(
+                self,
+                "Nạp dữ liệu thành công",
+                f"Đã nạp thành công {summary.success_count} phòng.",
+            )
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning if summary.success_count == 0 else QMessageBox.Information)
+        dialog.setWindowTitle("Kết quả nạp dữ liệu")
+        dialog.setText(
+            f"Đã nạp thành công {summary.success_count} phòng.\n"
+            f"Bỏ qua {summary.skipped_count} dòng không hợp lệ hoặc bị trùng."
+        )
+        dialog.setInformativeText("Mở phần Chi tiết để xem từng lý do cụ thể.")
+        dialog.setDetailedText("\n".join(summary.issues))
+        dialog.exec_()

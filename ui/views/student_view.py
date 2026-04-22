@@ -1,6 +1,7 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
+    QFileDialog,
     QFrame,
     QHeaderView,
     QHBoxLayout,
@@ -14,15 +15,20 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from models import UserRole
+from services.data_exchange_service import DataExchangeService
 from services.student_service import StudentService
 from ui.dialogs.student_dialog import StudentDialog
 from ui.widgets.hover_table_widget import HoverTableWidget
 
 
 class StudentView(QWidget):
-    def __init__(self):
+    def __init__(self, user=None):
         super().__init__()
+        self.user = user
+        self.is_admin_mode = bool(user and user.role == UserRole.ADMIN)
         self.student_service = StudentService()
+        self.exchange_service = DataExchangeService()
         self.init_ui()
         self.load_students()
 
@@ -45,12 +51,22 @@ class StudentView(QWidget):
         title_wrap.addWidget(title)
         title_wrap.addWidget(subtitle)
 
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+
+        self.btn_import = QPushButton("Nạp từ Excel")
+        self.btn_import.clicked.connect(self.import_students_from_excel)
+        self.btn_import.setVisible(self.is_admin_mode)
+
         self.btn_add = QPushButton("Thêm sinh viên")
         self.btn_add.setObjectName("PrimaryButton")
         self.btn_add.clicked.connect(self.add_student_dialog)
 
+        actions.addWidget(self.btn_import)
+        actions.addWidget(self.btn_add)
+
         header_layout.addLayout(title_wrap, 1)
-        header_layout.addWidget(self.btn_add, 0)
+        header_layout.addLayout(actions, 0)
         layout.addWidget(header)
 
         toolbar = QHBoxLayout()
@@ -156,3 +172,44 @@ class StudentView(QWidget):
             self.load_students()
         except Exception as exc:
             QMessageBox.critical(self, "Không thể xử lý", str(exc))
+
+    def import_students_from_excel(self):
+        if not self.is_admin_mode:
+            QMessageBox.warning(self, "Không có quyền", "Chỉ quản trị viên mới được phép nạp dữ liệu sinh viên.")
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Chọn file Excel sinh viên",
+            "",
+            "Excel Workbook (*.xlsx)",
+        )
+        if not file_path:
+            return
+
+        try:
+            summary = self.exchange_service.import_students_from_excel(file_path)
+            self.load_students()
+            self.show_import_summary("sinh viên", summary)
+        except Exception as exc:
+            QMessageBox.critical(self, "Không thể nạp dữ liệu", str(exc))
+
+    def show_import_summary(self, entity_label, summary):
+        if summary.skipped_count == 0:
+            QMessageBox.information(
+                self,
+                "Nạp dữ liệu thành công",
+                f"Đã nạp thành công {summary.success_count} {entity_label}.",
+            )
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning if summary.success_count == 0 else QMessageBox.Information)
+        dialog.setWindowTitle("Kết quả nạp dữ liệu")
+        dialog.setText(
+            f"Đã nạp thành công {summary.success_count} {entity_label}.\n"
+            f"Bỏ qua {summary.skipped_count} dòng không hợp lệ hoặc bị trùng."
+        )
+        dialog.setInformativeText("Mở phần Chi tiết để xem từng lý do cụ thể.")
+        dialog.setDetailedText("\n".join(summary.issues))
+        dialog.exec_()

@@ -37,6 +37,7 @@ env/
 
 # Session & Data
 session.json
+config/app_settings.json
 *.db
 *.sqlite3
 

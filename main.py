@@ -1,8 +1,16 @@
 import os
 import sys
 
+# Đặt AppUserModelID trên Windows để icon hiển thị đúng dưới taskbar
+if sys.platform == 'win32':
+    import ctypes
+
+    myappid = 'dormmanager.app.1.0'  # Chuỗi định danh tùy ý cho ứng dụng
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtGui import QIcon
 
 from db_setup import run_db_setup
 from services.student_service import AuthService
@@ -33,6 +41,10 @@ class DormManagerApp:
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
         self.app = QApplication(sys.argv)
+
+        icon_path = os.path.join(os.path.dirname(__file__), "ui", "resources", "icons", "logo.jpg")
+        self.app.setWindowIcon(QIcon(icon_path))
+
         self.app.setStyle("Fusion")
         load_stylesheet(self.app)
 

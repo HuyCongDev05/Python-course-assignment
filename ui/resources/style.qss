@@ -535,6 +535,80 @@ QListWidget#ComboSearchList::item:selected {
     color: #21313e;
 }
 
+QFrame#ChatPanel {
+    background: #fffaf4;
+    border: 1px solid #dbc6ad;
+    border-radius: 26px;
+}
+
+QPushButton#ChatLauncherButton {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #d08c2d,
+        stop:1 #9b5a1d);
+    color: white;
+    border: none;
+    border-radius: 33px;
+    font-size: 18px;
+    font-weight: 800;
+    padding: 0;
+}
+
+QPushButton#ChatLauncherButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #de9b3c,
+        stop:1 #ad6927);
+}
+
+QPushButton#ChatCloseButton {
+    background: #f7ecdf;
+    color: #5f4a38;
+    border: 1px solid #e1cfbb;
+    border-radius: 17px;
+    padding: 0;
+}
+
+QPushButton#ChatCloseButton:hover {
+    background: #ecd9c2;
+}
+
+QLabel#ChatTitle {
+    color: #1b2f3d;
+    font-size: 20px;
+    font-weight: 800;
+}
+
+QLabel#ChatSubtitle,
+QLabel#ChatHint,
+QLabel#ChatStatus {
+    color: #6d7680;
+}
+
+QLabel#ChatStatus {
+    background: #f5ecdf;
+    border: 1px solid #ead8c4;
+    border-radius: 14px;
+    padding: 10px 12px;
+}
+
+QTextBrowser#ChatLog {
+    background: #fffdf9;
+    border: 1px solid #e5d8c8;
+    border-radius: 18px;
+    padding: 10px 12px;
+}
+
+QTextEdit#ChatInput {
+    background: #fffdf9;
+    border: 1px solid #dccab6;
+    border-radius: 18px;
+    padding: 10px 12px;
+}
+
+QTextEdit#ChatInput:focus {
+    border: 1px solid #be7d22;
+    background: #fffaf2;
+}
+
 QMessageBox {
     background: #fffdfa;
 }

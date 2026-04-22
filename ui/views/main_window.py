@@ -12,8 +12,10 @@ from PyQt5.QtWidgets import (
 )
 
 from models import UserRole
+from ui.widgets.chat_assistant import DormChatAssistant
 from .contract_view import ContractView
 from .dashboard_view import DashboardView
+from .export_view import ExportView
 from .payment_view import PaymentView
 from .room_view import RoomView
 from .student_view import StudentView
@@ -82,6 +84,7 @@ class MainWindow(QMainWindow):
         self.btn_rooms = self.build_nav_button("Phòng ở")
         self.btn_contracts = self.build_nav_button("Hợp đồng")
         self.btn_payments = self.build_nav_button("Thanh toán")
+        self.btn_exports = self.build_nav_button("Xuất file")
 
         for button in [
             self.btn_dashboard,
@@ -89,12 +92,16 @@ class MainWindow(QMainWindow):
             self.btn_rooms,
             self.btn_contracts,
             self.btn_payments,
+            self.btn_exports,
         ]:
             sidebar_layout.addWidget(button)
 
         if self.user.role == UserRole.STUDENT:
             self.btn_students.hide()
             self.btn_contracts.hide()
+            self.btn_exports.hide()
+        elif self.user.role != UserRole.ADMIN:
+            self.btn_exports.hide()
 
         sidebar_layout.addStretch()
 
@@ -112,16 +119,18 @@ class MainWindow(QMainWindow):
         self.content_area.setObjectName("ContentArea")
 
         self.dashboard_view = DashboardView(self.user)
-        self.student_view = StudentView()
+        self.student_view = StudentView(self.user)
         self.room_view = RoomView(self.user)
         self.contract_view = ContractView()
         self.payment_view = PaymentView(self.user)
+        self.export_view = ExportView(self.user)
 
         self.content_area.addWidget(self.dashboard_view)
         self.content_area.addWidget(self.student_view)
         self.content_area.addWidget(self.room_view)
         self.content_area.addWidget(self.contract_view)
         self.content_area.addWidget(self.payment_view)
+        self.content_area.addWidget(self.export_view)
         content_layout.addWidget(self.content_area)
 
         self.btn_dashboard.clicked.connect(lambda: self.switch_view(0, self.btn_dashboard))
@@ -129,9 +138,12 @@ class MainWindow(QMainWindow):
         self.btn_rooms.clicked.connect(lambda: self.switch_view(2, self.btn_rooms))
         self.btn_contracts.clicked.connect(lambda: self.switch_view(3, self.btn_contracts))
         self.btn_payments.clicked.connect(lambda: self.switch_view(4, self.btn_payments))
+        self.btn_exports.clicked.connect(lambda: self.switch_view(5, self.btn_exports))
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(content_shell, 1)
+
+        self.chat_assistant = DormChatAssistant(self.user, central_widget)
 
         self.btn_dashboard.setChecked(True)
         self.switch_view(0, self.btn_dashboard)
@@ -149,16 +161,25 @@ class MainWindow(QMainWindow):
             self.btn_rooms,
             self.btn_contracts,
             self.btn_payments,
+            self.btn_exports,
         ]:
             if button != active_button:
                 button.setChecked(False)
 
         active_view = self.content_area.widget(index)
-        for method_name in ["load_students", "load_rooms", "load_contracts", "load_payments", "refresh_stats"]:
+        for method_name in [
+            "load_students",
+            "load_rooms",
+            "load_contracts",
+            "load_payments",
+            "refresh_stats",
+            "refresh_directory_labels",
+        ]:
             if hasattr(active_view, method_name):
                 getattr(active_view, method_name)()
 
         self.content_area.setCurrentIndex(index)
+        self.chat_assistant.raise_to_front()
 
     def role_label(self, role):
         return {
@@ -166,6 +187,11 @@ class MainWindow(QMainWindow):
             UserRole.STAFF: "Nhân viên",
             UserRole.STUDENT: "Sinh viên",
         }.get(role, "Người dùng")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "chat_assistant"):
+            self.chat_assistant.reposition()
 
     def handle_logout(self):
         self.logout_signal.emit()

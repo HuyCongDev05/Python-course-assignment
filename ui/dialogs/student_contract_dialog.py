@@ -1,5 +1,5 @@
 import calendar
-from datetime import date, timedelta
+from datetime import date
 
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtWidgets import (
@@ -129,7 +129,7 @@ class StudentContractDialog(QDialog):
         end = self.get_end_date()
 
         if not start or not end or end <= start:
-            self.summary_label.setText("⚠ Ngày kết thúc phải sau ngày bắt đầu.")
+            self.summary_label.setText("Ngày kết thúc phải sau ngày bắt đầu.")
             return
 
         months = _months_between(start, end)
