@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -29,6 +29,10 @@ class StudentView(QWidget):
         self.is_admin_mode = bool(user and user.role == UserRole.ADMIN)
         self.student_service = StudentService()
         self.exchange_service = DataExchangeService()
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self.load_students)
         self.init_ui()
         self.load_students()
 
@@ -73,7 +77,7 @@ class StudentView(QWidget):
         toolbar.setSpacing(12)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Tìm theo mã sinh viên, tên, số điện thoại hoặc email")
-        self.search_input.textChanged.connect(self.load_students)
+        self.search_input.textChanged.connect(self.schedule_load_students)
         toolbar.addWidget(self.search_input, 1)
 
         self.total_chip = QLabel()
@@ -107,7 +111,11 @@ class StudentView(QWidget):
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_student_dialog())
         layout.addWidget(self.table)
 
+    def schedule_load_students(self):
+        self._search_timer.start()
+
     def load_students(self):
+        self.student_service.reset_session()
         students = self.student_service.get_all_students(self.search_input.text())
         self.populate_table(students)
 
@@ -188,6 +196,7 @@ class StudentView(QWidget):
             return
 
         try:
+            self.exchange_service.reset_session()
             summary = self.exchange_service.import_students_from_excel(file_path)
             self.load_students()
             self.show_import_summary("sinh viên", summary)
@@ -213,3 +222,7 @@ class StudentView(QWidget):
         dialog.setInformativeText("Mở phần Chi tiết để xem từng lý do cụ thể.")
         dialog.setDetailedText("\n".join(summary.issues))
         dialog.exec_()
+
+    def dispose(self):
+        self.student_service.close()
+        self.exchange_service.close()

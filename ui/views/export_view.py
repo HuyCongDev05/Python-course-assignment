@@ -142,6 +142,7 @@ class ExportView(QWidget):
             current_directory = get_export_directory()
 
         try:
+            self.exchange_service.reset_session()
             export_type = self.export_type.currentData()
             if export_type == "students":
                 file_path = self.exchange_service.export_students_to_excel(current_directory)
@@ -156,3 +157,6 @@ class ExportView(QWidget):
             )
         except Exception as exc:
             QMessageBox.critical(self, "Không thể xuất file", str(exc))
+
+    def dispose(self):
+        self.exchange_service.close()

@@ -114,6 +114,7 @@ class LoginView(QWidget):
             QMessageBox.warning(self, "Thiếu dữ liệu", "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.")
             return
 
+        self.auth_service.reset_session()
         user = self.auth_service.login(username, password)
         if user:
             self.login_success.emit(user)

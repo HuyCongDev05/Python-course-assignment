@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -35,6 +35,10 @@ class PaymentView(QWidget):
         super().__init__()
         self.user = user
         self.payment_service = PaymentService()
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self.load_payments)
         self.init_ui()
         self.load_payments()
 
@@ -74,7 +78,7 @@ class PaymentView(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Tìm theo tên sinh viên, mã sinh viên hoặc số phòng")
-        self.search_input.textChanged.connect(self.load_payments)
+        self.search_input.textChanged.connect(self.schedule_load_payments)
 
         self.status_filter = QComboBox()
         style_combo_popups(self.status_filter)
@@ -120,10 +124,11 @@ class PaymentView(QWidget):
         if self.user and self.user.role == UserRole.STUDENT:
             self.btn_add.hide()
 
+    def schedule_load_payments(self):
+        self._search_timer.start()
+
     def load_payments(self):
-        # Tạo service mới mỗi lần load để tránh dùng session SQLAlchemy cũ
-        # (session cũ cache dữ liệu, không thấy phiếu được tạo bởi service khác)
-        self.payment_service = PaymentService()
+        self.payment_service.reset_session()
         payments = self.payment_service.get_all_payments(self.search_input.text(), self.status_filter.currentData())
         if self.user and self.user.role == UserRole.STUDENT:
             payments = [
@@ -174,6 +179,7 @@ class PaymentView(QWidget):
         self.edit_payment_dialog()
 
     def add_payment_dialog(self):
+        self.payment_service.reset_session()
         contracts = self.payment_service.get_contract_candidates()
         if not contracts:
             QMessageBox.warning(self, "Không có dữ liệu", "Chưa có hợp đồng phù hợp để tạo phiếu thanh toán.")
@@ -211,6 +217,7 @@ class PaymentView(QWidget):
             QMessageBox.warning(self, "Chưa chọn dữ liệu", "Vui lòng chọn một phiếu thanh toán để chỉnh sửa.")
             return
 
+        self.payment_service.reset_session()
         payment = self.payment_service.get_payment_by_id(payment_id)
         contracts = self.payment_service.get_contract_candidates(include_contract_id=payment.contract_id)
         dialog = PaymentDialog(self, payment=payment, contracts=contracts)
@@ -230,3 +237,6 @@ class PaymentView(QWidget):
             self.load_payments()
         except Exception as exc:
             QMessageBox.critical(self, "Không thể xử lý", str(exc))
+
+    def dispose(self):
+        self.payment_service.close()

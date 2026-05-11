@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -26,6 +26,10 @@ class ContractView(QWidget):
     def __init__(self):
         super().__init__()
         self.contract_service = ContractService()
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self.load_contracts)
         self.init_ui()
         self.load_contracts()
 
@@ -60,7 +64,7 @@ class ContractView(QWidget):
         toolbar.setSpacing(12)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Tìm theo tên sinh viên, mã sinh viên hoặc số phòng")
-        self.search_input.textChanged.connect(self.load_contracts)
+        self.search_input.textChanged.connect(self.schedule_load_contracts)
 
         self.status_filter = QComboBox()
         style_combo_popups(self.status_filter)
@@ -104,8 +108,12 @@ class ContractView(QWidget):
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_contract_dialog())
         layout.addWidget(self.table)
 
+    def schedule_load_contracts(self):
+        self._search_timer.start()
+
     def load_contracts(self):
-        self.contract_service = ContractService()
+        self.contract_service.reset_session()
+        self.contract_service.refresh_contract_statuses()
         contracts = self.contract_service.get_all_contracts(self.search_input.text(), self.status_filter.currentData())
         self.populate_table(contracts)
 
@@ -138,6 +146,7 @@ class ContractView(QWidget):
         return int(item.text()) if item else None
 
     def add_contract_dialog(self):
+        self.contract_service.reset_session()
         students = self.contract_service.get_assignable_students()
         rooms = self.contract_service.get_room_candidates()
         if not students:
@@ -162,6 +171,7 @@ class ContractView(QWidget):
             QMessageBox.warning(self, "Chưa chọn dữ liệu", "Vui lòng chọn một hợp đồng để chỉnh sửa.")
             return
 
+        self.contract_service.reset_session()
         contract = self.contract_service.get_contract_by_id(contract_id)
         students = self.contract_service.get_assignable_students(include_student_id=contract.student_id)
         rooms = self.contract_service.get_room_candidates(include_room_id=contract.room_id)
@@ -182,3 +192,6 @@ class ContractView(QWidget):
             self.load_contracts()
         except Exception as exc:
             QMessageBox.critical(self, "Không thể xử lý", str(exc))
+
+    def dispose(self):
+        self.contract_service.close()

@@ -27,6 +27,15 @@ class MainWindow(QMainWindow):
     def __init__(self, user):
         super().__init__()
         self.user = user
+        self._views = [None] * 6
+        self._view_factories = {
+            0: lambda: DashboardView(self.user),
+            1: lambda: StudentView(self.user),
+            2: lambda: RoomView(self.user),
+            3: lambda: ContractView(),
+            4: lambda: PaymentView(self.user),
+            5: lambda: ExportView(self.user),
+        }
         self.init_ui()
 
     def init_ui(self):
@@ -117,20 +126,8 @@ class MainWindow(QMainWindow):
 
         self.content_area = QStackedWidget()
         self.content_area.setObjectName("ContentArea")
-
-        self.dashboard_view = DashboardView(self.user)
-        self.student_view = StudentView(self.user)
-        self.room_view = RoomView(self.user)
-        self.contract_view = ContractView()
-        self.payment_view = PaymentView(self.user)
-        self.export_view = ExportView(self.user)
-
-        self.content_area.addWidget(self.dashboard_view)
-        self.content_area.addWidget(self.student_view)
-        self.content_area.addWidget(self.room_view)
-        self.content_area.addWidget(self.contract_view)
-        self.content_area.addWidget(self.payment_view)
-        self.content_area.addWidget(self.export_view)
+        for _ in range(6):
+            self.content_area.addWidget(QWidget())
         content_layout.addWidget(self.content_area)
 
         self.btn_dashboard.clicked.connect(lambda: self.switch_view(0, self.btn_dashboard))
@@ -154,6 +151,19 @@ class MainWindow(QMainWindow):
         button.setCursor(Qt.PointingHandCursor)
         return button
 
+    def _ensure_view(self, index):
+        existing_view = self._views[index]
+        if existing_view is not None:
+            return existing_view, False
+
+        view = self._view_factories[index]()
+        placeholder = self.content_area.widget(index)
+        self.content_area.insertWidget(index, view)
+        self.content_area.removeWidget(placeholder)
+        placeholder.deleteLater()
+        self._views[index] = view
+        return view, True
+
     def switch_view(self, index, active_button):
         for button in [
             self.btn_dashboard,
@@ -166,19 +176,21 @@ class MainWindow(QMainWindow):
             if button != active_button:
                 button.setChecked(False)
 
-        active_view = self.content_area.widget(index)
-        for method_name in [
-            "load_students",
-            "load_rooms",
-            "load_contracts",
-            "load_payments",
-            "refresh_stats",
-            "refresh_directory_labels",
-        ]:
-            if hasattr(active_view, method_name):
-                getattr(active_view, method_name)()
-
+        active_view, created_now = self._ensure_view(index)
         self.content_area.setCurrentIndex(index)
+
+        if not created_now:
+            for method_name in [
+                "load_students",
+                "load_rooms",
+                "load_contracts",
+                "load_payments",
+                "refresh_stats",
+                "refresh_directory_labels",
+            ]:
+                if hasattr(active_view, method_name):
+                    getattr(active_view, method_name)()
+
         self.chat_assistant.raise_to_front()
 
     def role_label(self, role):
@@ -192,6 +204,12 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "chat_assistant"):
             self.chat_assistant.reposition()
+
+    def closeEvent(self, event):
+        for view in self._views:
+            if view is not None and hasattr(view, "dispose"):
+                view.dispose()
+        super().closeEvent(event)
 
     def handle_logout(self):
         self.logout_signal.emit()

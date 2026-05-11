@@ -1,6 +1,5 @@
 import hashlib
 import math
-import os
 
 from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QPainter, QPixmap, QPolygonF
@@ -18,6 +17,7 @@ from PyQt5.QtWidgets import (
 from models import PaymentStatus
 from services.student_service import ONLINE_PAYMENT_PENDING_NOTE, is_online_payment_pending_note
 from utils.formatters import format_currency, format_date, payment_note_label, payment_status_label, payment_type_label
+from utils.runtime_paths import resource_path
 
 MB_BANK_ACCOUNT_NAME = "Nguyễn Huy Công"
 MB_BANK_NAME = "MB Bank"
@@ -30,7 +30,7 @@ PAYMENT_QR_CANDIDATES = (
 
 
 def _resource_path(*parts):
-    return os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "resources", *parts))
+    return resource_path("ui", "resources", *parts)
 
 
 def _draw_module(painter, module_size, border_modules, row, col, color):
@@ -160,8 +160,6 @@ def build_mb_bank_badge_pixmap(width=148, height=50):
 def load_payment_qr_pixmap(max_width=260, max_height=260):
     for filename in PAYMENT_QR_CANDIDATES:
         candidate_path = _resource_path("images", filename)
-        if not os.path.exists(candidate_path):
-            continue
         pixmap = QPixmap(candidate_path)
         if pixmap.isNull():
             continue

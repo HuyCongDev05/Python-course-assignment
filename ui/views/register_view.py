@@ -114,13 +114,14 @@ class RegisterView(QWidget):
         password = self.password_input.text().strip()
         student_code = self.student_id_input.text().strip()
 
+        self.student_service.reset_session()
         success, message, user = self.student_service.register_student(username, password, student_code)
         if success and user:
             QMessageBox.information(self, "Đăng ký thành công", message)
             self.username_input.clear()
             self.password_input.clear()
             self.student_id_input.clear()
-            self.register_success.emit(user)  # emit toàn bộ user object, không dùng user.id
+            self.register_success.emit(user)
             return
 
         if message.startswith("Lỗi:"):

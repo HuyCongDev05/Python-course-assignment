@@ -134,6 +134,7 @@ def _validate_registration_inputs(username, password, student_id, student):
 
 class BaseService:
     def __init__(self, db: Session = None):
+        self._owns_session = db is None
         self.db = db or SessionLocal()
 
     def _commit(self):
@@ -142,6 +143,23 @@ class BaseService:
         except Exception:
             self.db.rollback()
             raise
+
+    def reset_session(self):
+        if not self._owns_session:
+            return
+        self.close()
+        self.db = SessionLocal()
+
+    def close(self):
+        if self._owns_session and getattr(self, "db", None) is not None:
+            self.db.close()
+            self.db = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 class AuthService(BaseService):
@@ -537,8 +555,6 @@ class ContractService(BaseService):
         return created
 
     def get_all_contracts(self, keyword=None, status=None):
-        self.refresh_contract_statuses()
-
         query = (
             self.db.query(Contract)
             .options(joinedload(Contract.student), joinedload(Contract.room))

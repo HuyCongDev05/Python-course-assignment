@@ -1,11 +1,11 @@
-import os
-
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QLineEdit
 
+from utils.runtime_paths import resource_path
+
 
 def _icon_path(name):
-    return os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "resources", "icons", name))
+    return resource_path("ui", "resources", "icons", name)
 
 
 class PasswordLineEdit(QLineEdit):

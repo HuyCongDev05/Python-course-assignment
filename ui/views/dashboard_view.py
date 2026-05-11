@@ -56,6 +56,7 @@ class DashboardView(QWidget):
         self.room_service = RoomService()
         self.contract_service = ContractService()
         self.payment_service = PaymentService()
+        self._last_generated_month_key = None
         self.init_ui()
         self.refresh_stats()
 
@@ -155,14 +156,16 @@ class DashboardView(QWidget):
         layout.addLayout(analytics_layout)
 
     def refresh_stats(self):
-        # Tạo mới service mỗi lần refresh để đảm bảo đọc dữ liệu mới nhất từ DB
-        self.student_service = StudentService()
-        self.room_service = RoomService()
-        self.contract_service = ContractService()
-        self.payment_service = PaymentService()
+        self.student_service.reset_session()
+        self.room_service.reset_session()
+        self.contract_service.reset_session()
+        self.payment_service.reset_session()
 
         self.contract_service.refresh_contract_statuses()
-        self.contract_service.generate_monthly_payments()
+        month_key = date.today().strftime("%Y-%m")
+        if self._last_generated_month_key != month_key:
+            self.contract_service.generate_monthly_payments()
+            self._last_generated_month_key = month_key
 
         students = self.student_service.get_all_students()
         rooms = self.room_service.get_all_rooms()
@@ -185,8 +188,14 @@ class DashboardView(QWidget):
         expected_revenue = sum(room.current_occupancy * room.price for room in rooms)
 
         self.card_one.update(len(students), f"{sum(1 for item in students if item.user_id)} tài khoản đã kích hoạt")
-        self.card_two.update(len(rooms), f"{occupied_beds}/{total_beds} chỗ đang được sử dụng" if total_beds else "Chưa có dữ liệu phòng")
-        self.card_three.update(len(active_contracts), f"{sum(1 for item in contracts if item.status == 'expired')} hợp đồng đã hết hạn")
+        self.card_two.update(
+            len(rooms),
+            f"{occupied_beds}/{total_beds} chỗ đang được sử dụng" if total_beds else "Chưa có dữ liệu phòng",
+        )
+        self.card_three.update(
+            len(active_contracts),
+            f"{sum(1 for item in contracts if item.status == 'expired')} hợp đồng đã hết hạn",
+        )
         self.card_four.update(format_currency(unpaid_total), f"Doanh thu dự kiến: {format_currency(expected_revenue)}")
 
         occupancy_percent = int((occupied_beds / total_beds) * 100) if total_beds else 0
@@ -194,51 +203,6 @@ class DashboardView(QWidget):
         self.occupancy_bar.setValue(occupancy_percent)
         self.populate_room_table(rooms)
         self.populate_contract_table(contracts)
-
-    def _refresh_student_dashboard(self, students, contracts, payments):
-        student_contracts = [item for item in contracts if item.student and item.student.user_id == self.user.id]
-        student_payments = [item for item in payments if item.contract and item.contract.student and item.contract.student.user_id == self.user.id]
-        active_contract = next((item for item in student_contracts if item.status == "active"), None)
-        unpaid_total = sum(item.amount for item in student_payments if item.status == PaymentStatus.UNPAID)
-        student_record = next((item for item in students if item.user_id == self.user.id), None)
-
-        self.card_one.title_label.setText("Mã sinh viên")
-        self.card_two.title_label.setText("Phòng hiện tại")
-        self.card_three.title_label.setText("Hợp đồng")
-        self.card_four.title_label.setText("Công nợ")
-
-        self.card_one.update(student_record.student_id if student_record else "--", "Mã hồ sơ đang liên kết với tài khoản")
-        self.card_two.update(active_contract.room.room_number if active_contract and active_contract.room else "--", "Phòng hiện tại")
-        self.card_three.update(len(student_contracts), "Số hợp đồng gắn với tài khoản")
-        self.card_four.update(format_currency(unpaid_total), "Tổng phí chưa thanh toán")
-
-        self.occupancy_summary.setText("Thông tin phòng ở của bạn.")
-        self.occupancy_bar.setValue(100 if active_contract else 0)
-        self.populate_room_table([active_contract.room] if active_contract and active_contract.room else [])
-        self.contract_hint.setText("Lịch sử hợp đồng cá nhân.")
-        self.populate_contract_table(student_contracts)
-
-    def populate_room_table(self, rooms):
-        self.room_table.setRowCount(0)
-        for row_index, room in enumerate(rooms[:6]):
-            self.room_table.insertRow(row_index)
-            ratio = f"{room.current_occupancy}/{room.capacity}"
-            self.room_table.setItem(row_index, 0, QTableWidgetItem(room.room_number))
-            self.room_table.setItem(row_index, 1, QTableWidgetItem(ratio))
-            self.room_table.setItem(row_index, 2, QTableWidgetItem(format_currency(room.price)))
-            self.room_table.setItem(row_index, 3, QTableWidgetItem(room_status_label(room.status)))
-
-    def populate_contract_table(self, contracts):
-        self.contract_table.setRowCount(0)
-        sorted_contracts = sorted(contracts, key=lambda item: item.end_date)
-        for row_index, contract in enumerate(sorted_contracts[:6]):
-            self.contract_table.insertRow(row_index)
-            student_name = contract.student.full_name if contract.student else "--"
-            room_number = contract.room.room_number if contract.room else "--"
-            self.contract_table.setItem(row_index, 0, QTableWidgetItem(student_name))
-            self.contract_table.setItem(row_index, 1, QTableWidgetItem(room_number))
-            self.contract_table.setItem(row_index, 2, QTableWidgetItem(format_date(contract.end_date)))
-            self.contract_table.setItem(row_index, 3, QTableWidgetItem(contract_status_label(contract.status)))
 
     def _refresh_student_dashboard(self, students, contracts, payments):
         student_contracts = [item for item in contracts if item.student and item.student.user_id == self.user.id]
@@ -281,3 +245,31 @@ class DashboardView(QWidget):
             "Lịch sử hợp đồng cá nhân." if student_contracts else "Chưa có hợp đồng lưu trú. Có thể chọn phòng trong mục Phòng ở."
         )
         self.populate_contract_table(student_contracts)
+
+    def populate_room_table(self, rooms):
+        self.room_table.setRowCount(0)
+        for row_index, room in enumerate(rooms[:6]):
+            self.room_table.insertRow(row_index)
+            ratio = f"{room.current_occupancy}/{room.capacity}"
+            self.room_table.setItem(row_index, 0, QTableWidgetItem(room.room_number))
+            self.room_table.setItem(row_index, 1, QTableWidgetItem(ratio))
+            self.room_table.setItem(row_index, 2, QTableWidgetItem(format_currency(room.price)))
+            self.room_table.setItem(row_index, 3, QTableWidgetItem(room_status_label(room.status)))
+
+    def populate_contract_table(self, contracts):
+        self.contract_table.setRowCount(0)
+        sorted_contracts = sorted(contracts, key=lambda item: item.end_date)
+        for row_index, contract in enumerate(sorted_contracts[:6]):
+            self.contract_table.insertRow(row_index)
+            student_name = contract.student.full_name if contract.student else "--"
+            room_number = contract.room.room_number if contract.room else "--"
+            self.contract_table.setItem(row_index, 0, QTableWidgetItem(student_name))
+            self.contract_table.setItem(row_index, 1, QTableWidgetItem(room_number))
+            self.contract_table.setItem(row_index, 2, QTableWidgetItem(format_date(contract.end_date)))
+            self.contract_table.setItem(row_index, 3, QTableWidgetItem(contract_status_label(contract.status)))
+
+    def dispose(self):
+        self.student_service.close()
+        self.room_service.close()
+        self.contract_service.close()
+        self.payment_service.close()

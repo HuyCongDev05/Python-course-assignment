@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -36,6 +36,10 @@ class RoomView(QWidget):
         self.exchange_service = DataExchangeService()
         self.student_service = StudentService() if self.is_student_mode else None
         self.current_student = None
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self.load_rooms)
         self.init_ui()
         self.load_rooms()
 
@@ -86,7 +90,7 @@ class RoomView(QWidget):
         toolbar.setSpacing(12)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Tìm theo số phòng hoặc phân loại")
-        self.search_input.textChanged.connect(self.load_rooms)
+        self.search_input.textChanged.connect(self.schedule_load_rooms)
 
         self.status_filter = QComboBox()
         style_combo_popups(self.status_filter)
@@ -132,8 +136,13 @@ class RoomView(QWidget):
             self.table.itemSelectionChanged.connect(self.update_student_action_state)
         layout.addWidget(self.table)
 
+    def schedule_load_rooms(self):
+        self._search_timer.start()
+
     def load_rooms(self):
-        if self.is_student_mode:
+        self.room_service.reset_session()
+        if self.student_service is not None:
+            self.student_service.reset_session()
             self.current_student = self.student_service.get_student_by_user_id(self.user.id)
 
         rooms = self.room_service.get_all_rooms(self.search_input.text(), self.status_filter.currentData())
@@ -263,7 +272,6 @@ class RoomView(QWidget):
             QMessageBox.warning(self, "Không tìm thấy dữ liệu", "Phòng đã chọn không còn tồn tại.")
             return
 
-        # Mở dialog nhập ngày hợp đồng — thay thế hộp xác nhận đơn giản
         dialog = StudentContractDialog(self, room=room)
         if dialog.exec_() != StudentContractDialog.Accepted:
             return
@@ -298,6 +306,7 @@ class RoomView(QWidget):
             return
 
         try:
+            self.exchange_service.reset_session()
             summary = self.exchange_service.import_rooms_from_excel(file_path)
             self.load_rooms()
             self.show_import_summary(summary)
@@ -323,3 +332,9 @@ class RoomView(QWidget):
         dialog.setInformativeText("Mở phần Chi tiết để xem từng lý do cụ thể.")
         dialog.setDetailedText("\n".join(summary.issues))
         dialog.exec_()
+
+    def dispose(self):
+        self.room_service.close()
+        self.exchange_service.close()
+        if self.student_service is not None:
+            self.student_service.close()

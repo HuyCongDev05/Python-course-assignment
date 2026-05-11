@@ -1,25 +1,32 @@
 import json
 import os
 
+from utils.runtime_paths import project_path, user_data_path
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SETTINGS_FILE = os.path.join(BASE_DIR, "config", "app_settings.json")
+
+SETTINGS_FILE = user_data_path("config", "app_settings.json")
+LEGACY_SETTINGS_FILE = project_path("config", "app_settings.json")
 
 
 def _ensure_settings_parent():
     os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
 
 
-def load_app_settings():
-    if not os.path.exists(SETTINGS_FILE):
-        return {}
-
+def _read_settings_file(file_path):
     try:
-        with open(SETTINGS_FILE, "r", encoding="utf-8") as settings_file:
+        with open(file_path, "r", encoding="utf-8") as settings_file:
             data = json.load(settings_file)
             return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def load_app_settings():
+    if os.path.exists(SETTINGS_FILE):
+        return _read_settings_file(SETTINGS_FILE)
+    if os.path.exists(LEGACY_SETTINGS_FILE):
+        return _read_settings_file(LEGACY_SETTINGS_FILE)
+    return {}
 
 
 def save_app_settings(settings):
