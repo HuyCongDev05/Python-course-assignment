@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+from PyQt5.QtCore import QObject, QRunnable, QThreadPool, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QMessageBox
 
 from .loading_overlay import LoadingOverlay
@@ -44,6 +44,12 @@ class AsyncLoadMixin:
         self._async_jobs = {}
         self._async_token = 0
         self._async_disposed = False
+        self._overlay_delay_ms = 180
+        self._overlay_pending_token = None
+        self._overlay_pending_text = ""
+        self._overlay_show_timer = QTimer(self)
+        self._overlay_show_timer.setSingleShot(True)
+        self._overlay_show_timer.timeout.connect(self._show_loading_overlay_if_needed)
         self.loading_overlay = LoadingOverlay(self, blur_target=blur_target)
 
     def run_loading_task(
@@ -75,11 +81,14 @@ class AsyncLoadMixin:
         runnable.signals.failed.connect(self._handle_async_error)
         runnable.signals.finished.connect(self._handle_async_finished)
 
-        self.loading_overlay.show_overlay(loading_text)
+        self._queue_loading_overlay(token, loading_text)
         self._thread_pool.start(runnable)
 
     def teardown_async_loader(self):
         self._async_disposed = True
+        self._overlay_show_timer.stop()
+        self._overlay_pending_token = None
+        self._overlay_pending_text = ""
         
         # Cancel all pending/running jobs on teardown
         for job in self._async_jobs.values():
@@ -114,4 +123,25 @@ class AsyncLoadMixin:
         if self._async_disposed:
             return
         if token == self._async_token:
+            self._overlay_show_timer.stop()
+            self._overlay_pending_token = None
+            self._overlay_pending_text = ""
             self.loading_overlay.hide_overlay()
+
+    def _queue_loading_overlay(self, token, loading_text):
+        self._overlay_pending_token = token
+        self._overlay_pending_text = loading_text
+
+        if self.loading_overlay.isVisible():
+            self.loading_overlay.show_overlay(loading_text)
+            return
+
+        self._overlay_show_timer.start(self._overlay_delay_ms)
+
+    def _show_loading_overlay_if_needed(self):
+        token = self._overlay_pending_token
+        if self._async_disposed or token != self._async_token:
+            return
+        if token not in self._async_jobs:
+            return
+        self.loading_overlay.show_overlay(self._overlay_pending_text)

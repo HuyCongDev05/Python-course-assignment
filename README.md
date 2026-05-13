@@ -108,11 +108,6 @@ python main.py
 
 ---
 
-## 📚 Tài liệu bổ sung
-
-- Để tìm hiểu chi tiết về kiến trúc hệ thống, quy trình xử lý dữ liệu và thiết kế giao diện, vui lòng
-  xem [README_TECHNICAL.md](README_TECHNICAL.md).
-
 ---
 
 ## 📝 Lưu ý quan trọng

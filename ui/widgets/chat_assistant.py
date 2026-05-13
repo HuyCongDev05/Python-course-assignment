@@ -186,7 +186,7 @@ class DormChatAssistant(QObject):
         self._discard_pending_reply = False
         self._active_request_id += 1
         request_id = self._active_request_id
-        self._set_busy(True, "Dang xu ly yeu cau, vui long cho...")
+        self._set_busy(True, "Đang xử lý yêu cầu, vui lòng chờ")
 
         worker_thread = threading.Thread(
             target=self._run_request,
