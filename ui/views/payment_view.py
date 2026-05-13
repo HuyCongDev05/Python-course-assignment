@@ -19,7 +19,7 @@ from models import PaymentStatus, UserRole
 from services.student_service import PaymentService
 from ui.dialogs.payment_dialog import PaymentDialog
 from ui.dialogs.student_payment_dialog import StudentPaymentDialog
-from ui.widgets.hover_table_widget import HoverTableWidget
+from ui.widgets import AsyncLoadMixin, HoverTableWidget
 from ui.widgets.searchable_combo_box import style_combo_popups
 from utils.formatters import (
     format_currency,
@@ -30,7 +30,7 @@ from utils.formatters import (
 )
 
 
-class PaymentView(QWidget):
+class PaymentView(QWidget, AsyncLoadMixin):
     def __init__(self, user=None):
         super().__init__()
         self.user = user
@@ -43,7 +43,14 @@ class PaymentView(QWidget):
         self.load_payments()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.content_widget = QWidget()
+        root_layout.addWidget(self.content_widget)
+
+        layout = QVBoxLayout(self.content_widget)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(20)
 
@@ -120,6 +127,7 @@ class PaymentView(QWidget):
         self.table.setColumnHidden(0, True)
         self.table.cellDoubleClicked.connect(lambda *_: self.handle_payment_double_click())
         layout.addWidget(self.table)
+        self.setup_async_loader(self.content_widget)
 
         if self.user and self.user.role == UserRole.STUDENT:
             self.btn_add.hide()
@@ -128,42 +136,69 @@ class PaymentView(QWidget):
         self._search_timer.start()
 
     def load_payments(self):
-        self.payment_service.reset_session()
-        payments = self.payment_service.get_all_payments(self.search_input.text(), self.status_filter.currentData())
-        if self.user and self.user.role == UserRole.STUDENT:
-            payments = [
-                item
-                for item in payments
-                if item.contract and item.contract.student and item.contract.student.user_id == self.user.id
+        keyword = self.search_input.text()
+        status = self.status_filter.currentData()
+        current_user_id = self.user.id if self.user and self.user.role == UserRole.STUDENT else None
+        self.run_loading_task(
+            lambda: self._fetch_payments(keyword, status, current_user_id),
+            self._apply_payments,
+            loading_text="Đang tải danh sách thanh toán...",
+            error_title="Không thể tải danh sách thanh toán",
+        )
+
+    def _fetch_payments(self, keyword, status, current_user_id):
+        service = PaymentService()
+        try:
+            payments = service.get_all_payments(keyword, status)
+            if current_user_id is not None:
+                payments = [
+                    item
+                    for item in payments
+                    if item.contract and item.contract.student and item.contract.student.user_id == current_user_id
+                ]
+
+            return [
+                {
+                    "id": payment.id,
+                    "contract_id": payment.contract_id,
+                    "student_name": payment.contract.student.full_name
+                    if payment.contract and payment.contract.student
+                    else "--",
+                    "room_number": payment.contract.room.room_number if payment.contract and payment.contract.room else "--",
+                    "amount": payment.amount,
+                    "payment_type": payment.payment_type.value if payment.payment_type else None,
+                    "payment_date": payment.payment_date,
+                    "status": payment.status.value if payment.status else None,
+                    "notes": payment.notes,
+                }
+                for payment in payments
             ]
+        finally:
+            service.close()
 
-        self.populate_table(payments)
-        self.total_chip.setText(f"{len(payments)} phiếu")
-        paid_total = sum(item.amount for item in payments if item.status == PaymentStatus.PAID)
-        unpaid_total = sum(item.amount for item in payments if item.status == PaymentStatus.UNPAID)
-        self.paid_chip.setText(f"Đã thu {format_currency(paid_total)}")
-        self.unpaid_chip.setText(f"Còn nợ {format_currency(unpaid_total)}")
-
-    def populate_table(self, payments):
+    def _apply_payments(self, payments):
         self.table.setRowCount(0)
         for row_index, payment in enumerate(payments):
             self.table.insertRow(row_index)
-            contract = payment.contract
-            student_name = contract.student.full_name if contract and contract.student else "--"
-            room_number = contract.room.room_number if contract and contract.room else "--"
             values = [
-                str(payment.id),
-                f"HĐ#{payment.contract_id}",
-                student_name,
-                room_number,
-                format_currency(payment.amount),
-                payment_type_label(payment.payment_type),
-                format_date(payment.payment_date),
-                payment_status_label(payment.status),
-                payment_note_label(payment.notes),
+                str(payment["id"]),
+                f"HD#{payment['contract_id']}",
+                payment["student_name"],
+                payment["room_number"],
+                format_currency(payment["amount"]),
+                payment_type_label(payment["payment_type"]),
+                format_date(payment["payment_date"]),
+                payment_status_label(payment["status"]),
+                payment_note_label(payment["notes"]),
             ]
             for column, value in enumerate(values):
                 self.table.setItem(row_index, column, QTableWidgetItem(value))
+
+        self.total_chip.setText(f"{len(payments)} phiếu")
+        paid_total = sum(item["amount"] for item in payments if item["status"] == PaymentStatus.PAID.value)
+        unpaid_total = sum(item["amount"] for item in payments if item["status"] == PaymentStatus.UNPAID.value)
+        self.paid_chip.setText(f"Đã thu {format_currency(paid_total)}")
+        self.unpaid_chip.setText(f"Còn nợ {format_currency(unpaid_total)}")
 
     def get_selected_payment_id(self):
         row_index = self.table.currentRow()
@@ -200,6 +235,7 @@ class PaymentView(QWidget):
             QMessageBox.warning(self, "Chưa chọn dữ liệu", "Vui lòng chọn một hóa đơn để xem chi tiết.")
             return
 
+        self.payment_service.reset_session()
         payment = self.payment_service.get_payment_by_id(payment_id)
         if not payment:
             QMessageBox.warning(self, "Không tìm thấy dữ liệu", "Hóa đơn này không còn tồn tại.")
@@ -239,4 +275,5 @@ class PaymentView(QWidget):
             QMessageBox.critical(self, "Không thể xử lý", str(exc))
 
     def dispose(self):
+        self.teardown_async_loader()
         self.payment_service.close()

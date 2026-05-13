@@ -612,3 +612,15 @@ QTextEdit#ChatInput:focus {
 QMessageBox {
     background: #fffdfa;
 }
+
+QFrame#LoadingPanel {
+    background: rgba(24, 34, 43, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+}
+
+QLabel#LoadingMessage {
+    color: #fff7ef;
+    font-size: 15px;
+    font-weight: 700;
+}

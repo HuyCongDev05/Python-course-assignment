@@ -17,12 +17,12 @@ from PyQt5.QtWidgets import (
 
 from services.student_service import ContractService
 from ui.dialogs.contract_dialog import ContractDialog
-from ui.widgets.hover_table_widget import HoverTableWidget
+from ui.widgets import AsyncLoadMixin, HoverTableWidget
 from ui.widgets.searchable_combo_box import style_combo_popups
 from utils.formatters import contract_status_label, format_currency, format_date
 
 
-class ContractView(QWidget):
+class ContractView(QWidget, AsyncLoadMixin):
     def __init__(self):
         super().__init__()
         self.contract_service = ContractService()
@@ -34,7 +34,14 @@ class ContractView(QWidget):
         self.load_contracts()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.content_widget = QWidget()
+        root_layout.addWidget(self.content_widget)
+
+        layout = QVBoxLayout(self.content_widget)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(20)
 
@@ -107,36 +114,62 @@ class ContractView(QWidget):
         self.table.setColumnHidden(0, True)
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_contract_dialog())
         layout.addWidget(self.table)
+        self.setup_async_loader(self.content_widget)
 
     def schedule_load_contracts(self):
         self._search_timer.start()
 
     def load_contracts(self):
-        self.contract_service.reset_session()
-        self.contract_service.refresh_contract_statuses()
-        contracts = self.contract_service.get_all_contracts(self.search_input.text(), self.status_filter.currentData())
-        self.populate_table(contracts)
+        keyword = self.search_input.text()
+        status = self.status_filter.currentData()
+        self.run_loading_task(
+            lambda: self._fetch_contracts(keyword, status),
+            self._apply_contracts,
+            loading_text="Đang tải danh sách hợp đồng...",
+            error_title="Không thể tải danh sách hợp đồng",
+        )
 
-        self.total_chip.setText(f"{len(contracts)} hợp đồng")
-        self.active_chip.setText(f"{sum(1 for item in contracts if item.status == 'active')} đang hiệu lực")
-        self.value_chip.setText(format_currency(sum(item.total_amount or 0 for item in contracts)))
+    def _fetch_contracts(self, keyword, status):
+        service = ContractService()
+        try:
+            service.refresh_contract_statuses()
+            contracts = service.get_all_contracts(keyword, status)
+            return [
+                {
+                    "id": contract.id,
+                    "student_name": contract.student.full_name if contract.student else "--",
+                    "student_code": contract.student.student_id if contract.student else "--",
+                    "room_number": contract.room.room_number if contract.room else "--",
+                    "start_date": contract.start_date,
+                    "end_date": contract.end_date,
+                    "total_amount": contract.total_amount,
+                    "status": contract.status,
+                }
+                for contract in contracts
+            ]
+        finally:
+            service.close()
 
-    def populate_table(self, contracts):
+    def _apply_contracts(self, contracts):
         self.table.setRowCount(0)
         for row_index, contract in enumerate(contracts):
             self.table.insertRow(row_index)
             values = [
-                str(contract.id),
-                contract.student.full_name if contract.student else "--",
-                contract.student.student_id if contract.student else "--",
-                contract.room.room_number if contract.room else "--",
-                format_date(contract.start_date),
-                format_date(contract.end_date),
-                format_currency(contract.total_amount),
-                contract_status_label(contract.status),
+                str(contract["id"]),
+                contract["student_name"],
+                contract["student_code"],
+                contract["room_number"],
+                format_date(contract["start_date"]),
+                format_date(contract["end_date"]),
+                format_currency(contract["total_amount"]),
+                contract_status_label(contract["status"]),
             ]
             for column, value in enumerate(values):
                 self.table.setItem(row_index, column, QTableWidgetItem(value))
+
+        self.total_chip.setText(f"{len(contracts)} hợp đồng")
+        self.active_chip.setText(f"{sum(1 for item in contracts if item['status'] == 'active')} đang hiệu lực")
+        self.value_chip.setText(format_currency(sum(item["total_amount"] or 0 for item in contracts)))
 
     def get_selected_contract_id(self):
         row_index = self.table.currentRow()
@@ -194,4 +227,5 @@ class ContractView(QWidget):
             QMessageBox.critical(self, "Không thể xử lý", str(exc))
 
     def dispose(self):
+        self.teardown_async_loader()
         self.contract_service.close()

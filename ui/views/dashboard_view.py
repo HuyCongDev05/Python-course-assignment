@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from datetime import date
 
 from PyQt5.QtCore import Qt
@@ -17,7 +19,7 @@ from PyQt5.QtWidgets import (
 
 from models import PaymentStatus, UserRole
 from services.student_service import ContractService, PaymentService, RoomService, StudentService
-from ui.widgets.hover_table_widget import HoverTableWidget
+from ui.widgets import AsyncLoadMixin, HoverTableWidget
 from utils.formatters import contract_status_label, format_currency, format_date, room_status_label
 
 
@@ -48,7 +50,7 @@ class MetricCard(QFrame):
         self.detail_label.setText(detail)
 
 
-class DashboardView(QWidget):
+class DashboardView(QWidget, AsyncLoadMixin):
     def __init__(self, user=None):
         super().__init__()
         self.user = user
@@ -61,7 +63,14 @@ class DashboardView(QWidget):
         self.refresh_stats()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.content_widget = QWidget()
+        root_layout.addWidget(self.content_widget)
+
+        layout = QVBoxLayout(self.content_widget)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(22)
 
@@ -154,24 +163,144 @@ class DashboardView(QWidget):
         analytics_layout.addWidget(occupancy_panel, 1)
         analytics_layout.addWidget(contract_panel, 1)
         layout.addLayout(analytics_layout)
+        self.setup_async_loader(self.content_widget)
 
     def refresh_stats(self):
-        self.student_service.reset_session()
-        self.room_service.reset_session()
-        self.contract_service.reset_session()
-        self.payment_service.reset_session()
-
-        self.contract_service.refresh_contract_statuses()
         month_key = date.today().strftime("%Y-%m")
-        if self._last_generated_month_key != month_key:
-            self.contract_service.generate_monthly_payments()
-            self._last_generated_month_key = month_key
+        should_generate_payments = self._last_generated_month_key != month_key
+        current_user_id = self.user.id if self.user else None
+        current_role = self.user.role if self.user else None
+        self.run_loading_task(
+            lambda: self._fetch_dashboard_payload(current_user_id, current_role, should_generate_payments, month_key),
+            self._apply_dashboard_payload,
+            loading_text="Đang tải tổng quan dữ liệu...",
+            error_title="Không thể tải tổng quan dữ liệu",
+        )
 
-        students = self.student_service.get_all_students()
-        rooms = self.room_service.get_all_rooms()
-        contracts = self.contract_service.get_all_contracts()
-        payments = self.payment_service.get_all_payments()
+    def _fetch_dashboard_payload(self, current_user_id, current_role, should_generate_payments, month_key):
+        student_service = StudentService()
+        room_service = RoomService()
+        contract_service = ContractService()
+        payment_service = PaymentService()
+        try:
+            contract_service.refresh_contract_statuses()
+            if should_generate_payments:
+                contract_service.generate_monthly_payments()
 
+            students = student_service.get_all_students()
+            rooms = room_service.get_all_rooms()
+            contracts = contract_service.get_all_contracts()
+            payments = payment_service.get_all_payments()
+
+            return {
+                "generated_month_key": month_key if should_generate_payments else None,
+                "user_id": current_user_id,
+                "role": current_role,
+                "students": [
+                    {
+                        "student_id": student.student_id,
+                        "user_id": student.user_id,
+                        "room_id": student.room_id,
+                        "room_number": student.room.room_number if student.room else None,
+                    }
+                    for student in students
+                ],
+                "rooms": [
+                    {
+                        "room_number": room.room_number,
+                        "capacity": room.capacity,
+                        "current_occupancy": room.current_occupancy,
+                        "price": room.price,
+                        "status": room.status.value if room.status else None,
+                    }
+                    for room in rooms
+                ],
+                "contracts": [
+                    {
+                        "student_name": contract.student.full_name if contract.student else "--",
+                        "student_code": contract.student.student_id if contract.student else "--",
+                        "student_user_id": contract.student.user_id if contract.student else None,
+                        "room_number": contract.room.room_number if contract.room else "--",
+                        "start_date": contract.start_date,
+                        "end_date": contract.end_date,
+                        "total_amount": contract.total_amount,
+                        "status": contract.status,
+                    }
+                    for contract in contracts
+                ],
+                "payments": [
+                    {
+                        "student_user_id": payment.contract.student.user_id
+                        if payment.contract and payment.contract.student
+                        else None,
+                        "amount": payment.amount,
+                        "status": payment.status.value if payment.status else None,
+                    }
+                    for payment in payments
+                ],
+            }
+        finally:
+            student_service.close()
+            room_service.close()
+            contract_service.close()
+            payment_service.close()
+
+    def _apply_dashboard_payload(self, payload):
+        if payload["generated_month_key"]:
+            self._last_generated_month_key = payload["generated_month_key"]
+
+        room_lookup = {
+            item["room_number"]: SimpleNamespace(
+                room_number=item["room_number"],
+                capacity=item["capacity"],
+                current_occupancy=item["current_occupancy"],
+                price=item["price"],
+                status=item["status"],
+            )
+            for item in payload["rooms"]
+        }
+
+        students = [
+            SimpleNamespace(
+                student_id=item["student_id"],
+                user_id=item["user_id"],
+                room_id=item["room_id"],
+                room=room_lookup.get(item["room_number"]),
+            )
+            for item in payload["students"]
+        ]
+        rooms = list(room_lookup.values())
+        contracts = [
+            SimpleNamespace(
+                student=SimpleNamespace(
+                    full_name=item["student_name"],
+                    student_id=item["student_code"],
+                    user_id=item["student_user_id"],
+                )
+                if item["student_name"] != "--" or item["student_user_id"] is not None
+                else None,
+                room=room_lookup.get(item["room_number"]),
+                start_date=item["start_date"],
+                end_date=item["end_date"],
+                total_amount=item["total_amount"],
+                status=item["status"],
+            )
+            for item in payload["contracts"]
+        ]
+        payments = [
+            SimpleNamespace(
+                amount=item["amount"],
+                status=PaymentStatus(item["status"]) if item["status"] else None,
+                contract=SimpleNamespace(
+                    student=SimpleNamespace(user_id=item["student_user_id"]) if item["student_user_id"] else None
+                ),
+            )
+            for item in payload["payments"]
+        ]
+
+        self._render_dashboard_data(students, rooms, contracts, payments)
+
+    def _render_dashboard_data(self, students, rooms, contracts, payments):
         if self.user and self.user.role == UserRole.STUDENT:
             self._refresh_student_dashboard(students, contracts, payments)
             return
@@ -190,7 +319,7 @@ class DashboardView(QWidget):
         self.card_one.update(len(students), f"{sum(1 for item in students if item.user_id)} tài khoản đã kích hoạt")
         self.card_two.update(
             len(rooms),
-            f"{occupied_beds}/{total_beds} chỗ đang được sử dụng" if total_beds else "Chưa có dữ liệu phòng",
+            f"{occupied_beds}/{total_beds} chỗ đang sử dụng" if total_beds else "Chưa có dữ liệu phòng",
         )
         self.card_three.update(
             len(active_contracts),
@@ -269,6 +398,7 @@ class DashboardView(QWidget):
             self.contract_table.setItem(row_index, 3, QTableWidgetItem(contract_status_label(contract.status)))
 
     def dispose(self):
+        self.teardown_async_loader()
         self.student_service.close()
         self.room_service.close()
         self.contract_service.close()

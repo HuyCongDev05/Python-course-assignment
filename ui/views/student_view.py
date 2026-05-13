@@ -19,10 +19,10 @@ from models import UserRole
 from services.data_exchange_service import DataExchangeService
 from services.student_service import StudentService
 from ui.dialogs.student_dialog import StudentDialog
-from ui.widgets.hover_table_widget import HoverTableWidget
+from ui.widgets import AsyncLoadMixin, HoverTableWidget
 
 
-class StudentView(QWidget):
+class StudentView(QWidget, AsyncLoadMixin):
     def __init__(self, user=None):
         super().__init__()
         self.user = user
@@ -37,7 +37,14 @@ class StudentView(QWidget):
         self.load_students()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.content_widget = QWidget()
+        root_layout.addWidget(self.content_widget)
+
+        layout = QVBoxLayout(self.content_widget)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(20)
 
@@ -110,37 +117,61 @@ class StudentView(QWidget):
         self.table.setColumnHidden(0, True)
         self.table.cellDoubleClicked.connect(lambda *_: self.edit_student_dialog())
         layout.addWidget(self.table)
+        self.setup_async_loader(self.content_widget)
 
     def schedule_load_students(self):
         self._search_timer.start()
 
     def load_students(self):
-        self.student_service.reset_session()
-        students = self.student_service.get_all_students(self.search_input.text())
-        self.populate_table(students)
+        keyword = self.search_input.text()
+        self.run_loading_task(
+            lambda: self._fetch_students(keyword),
+            self._apply_students,
+            loading_text="Đang tải danh sách sinh viên...",
+            error_title="Không thể tải danh sách sinh viên",
+        )
 
-        self.total_chip.setText(f"{len(students)} hồ sơ")
-        self.account_chip.setText(f"{sum(1 for item in students if item.user_id)} đã có tài khoản")
-        self.room_chip.setText(f"{sum(1 for item in students if item.room_id)} đã gán phòng")
+    def _fetch_students(self, keyword):
+        service = StudentService()
+        try:
+            students = service.get_all_students(keyword)
+            return [
+                {
+                    "id": student.id,
+                    "student_id": student.student_id,
+                    "full_name": student.full_name,
+                    "gender": student.gender or "--",
+                    "phone": student.phone or "--",
+                    "email": student.email or "--",
+                    "room_number": student.room.room_number if student.room else "--",
+                    "has_user": bool(student.user_id),
+                    "has_room": bool(student.room_id),
+                }
+                for student in students
+            ]
+        finally:
+            service.close()
 
-    def populate_table(self, students):
+    def _apply_students(self, students):
         self.table.setRowCount(0)
         for row_index, student in enumerate(students):
             self.table.insertRow(row_index)
-            room_label = student.room.room_number if student.room else "--"
-            account_label = "Đã kích hoạt" if student.user_id else "Chưa có"
             values = [
-                str(student.id),
-                student.student_id,
-                student.full_name,
-                student.gender or "--",
-                student.phone or "--",
-                student.email or "--",
-                room_label,
-                account_label,
+                str(student["id"]),
+                student["student_id"],
+                student["full_name"],
+                student["gender"],
+                student["phone"],
+                student["email"],
+                student["room_number"],
+                "Đã kích hoạt" if student["has_user"] else "Chưa có",
             ]
             for column, value in enumerate(values):
                 self.table.setItem(row_index, column, QTableWidgetItem(value))
+
+        self.total_chip.setText(f"{len(students)} hồ sơ")
+        self.account_chip.setText(f"{sum(1 for item in students if item['has_user'])} đã có tài khoản")
+        self.room_chip.setText(f"{sum(1 for item in students if item['has_room'])} đã gán phòng")
 
     def get_selected_student_id(self):
         row_index = self.table.currentRow()
@@ -165,6 +196,7 @@ class StudentView(QWidget):
             QMessageBox.warning(self, "Chưa chọn dữ liệu", "Vui lòng chọn một sinh viên để chỉnh sửa.")
             return
 
+        self.student_service.reset_session()
         student = self.student_service.get_student_by_id(student_id)
         dialog = StudentDialog(self, student=student)
         if not dialog.exec_():
@@ -224,5 +256,6 @@ class StudentView(QWidget):
         dialog.exec_()
 
     def dispose(self):
+        self.teardown_async_loader()
         self.student_service.close()
         self.exchange_service.close()

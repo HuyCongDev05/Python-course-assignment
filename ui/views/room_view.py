@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -21,12 +23,12 @@ from services.data_exchange_service import DataExchangeService
 from services.student_service import RoomService, StudentService
 from ui.dialogs.room_dialog import RoomDialog
 from ui.dialogs.student_contract_dialog import StudentContractDialog
-from ui.widgets.hover_table_widget import HoverTableWidget
+from ui.widgets import AsyncLoadMixin, HoverTableWidget
 from ui.widgets.searchable_combo_box import style_combo_popups
 from utils.formatters import format_currency, room_status_label
 
 
-class RoomView(QWidget):
+class RoomView(QWidget, AsyncLoadMixin):
     def __init__(self, user=None):
         super().__init__()
         self.user = user
@@ -44,7 +46,14 @@ class RoomView(QWidget):
         self.load_rooms()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self.content_widget = QWidget()
+        root_layout.addWidget(self.content_widget)
+
+        layout = QVBoxLayout(self.content_widget)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(20)
 
@@ -135,70 +144,114 @@ class RoomView(QWidget):
         if self.is_student_mode:
             self.table.itemSelectionChanged.connect(self.update_student_action_state)
         layout.addWidget(self.table)
+        self.setup_async_loader(self.content_widget)
 
     def schedule_load_rooms(self):
         self._search_timer.start()
 
     def load_rooms(self):
-        self.room_service.reset_session()
-        if self.student_service is not None:
-            self.student_service.reset_session()
-            self.current_student = self.student_service.get_student_by_user_id(self.user.id)
+        keyword = self.search_input.text()
+        status = self.status_filter.currentData()
+        user_id = self.user.id if self.is_student_mode and self.user else None
+        self.run_loading_task(
+            lambda: self._fetch_rooms(keyword, status, user_id),
+            self._apply_rooms,
+            loading_text="Đang tải danh sách phòng...",
+            error_title="Không thể tải danh sách phòng",
+        )
 
-        rooms = self.room_service.get_all_rooms(self.search_input.text(), self.status_filter.currentData())
-        self.populate_table(rooms)
+    def _fetch_rooms(self, keyword, status, user_id):
+        room_service = RoomService()
+        student_service = StudentService() if user_id else None
+        try:
+            current_student = student_service.get_student_by_user_id(user_id) if student_service is not None else None
+            rooms = room_service.get_all_rooms(keyword, status)
+            return {
+                "current_student_room_id": current_student.room_id if current_student else None,
+                "current_student_room_number": current_student.room.room_number
+                if current_student and current_student.room
+                else None,
+                "rooms": [
+                    {
+                        "id": room.id,
+                        "room_number": room.room_number,
+                        "room_type": room.room_type or "--",
+                        "capacity": room.capacity,
+                        "current_occupancy": room.current_occupancy,
+                        "price": room.price,
+                        "status": room.status.value if room.status else None,
+                    }
+                    for room in rooms
+                ],
+            }
+        finally:
+            room_service.close()
+            if student_service is not None:
+                student_service.close()
+
+    def _apply_rooms(self, payload):
+        current_room_id = payload["current_student_room_id"]
+        current_room_number = payload["current_student_room_number"]
+        self.current_student = (
+            SimpleNamespace(
+                room_id=current_room_id,
+                room=SimpleNamespace(room_number=current_room_number) if current_room_number else None,
+            )
+            if current_room_id
+            else None
+        )
+
+        rooms = payload["rooms"]
+        self.table.setRowCount(0)
+        selected_row = -1
+        for row_index, room in enumerate(rooms):
+            self.table.insertRow(row_index)
+            values = [
+                str(room["id"]),
+                room["room_number"],
+                room["room_type"],
+                str(room["capacity"]),
+                str(room["current_occupancy"]),
+                format_currency(room["price"]),
+                room_status_label(room["status"]),
+            ]
+            for column, value in enumerate(values):
+                self.table.setItem(row_index, column, QTableWidgetItem(value))
+            if current_room_id and room["id"] == current_room_id:
+                selected_row = row_index
+
+        if selected_row >= 0:
+            self.table.selectRow(selected_row)
 
         if self.is_student_mode:
             selectable_rooms = [
                 room
                 for room in rooms
-                if room.status.value != "maintenance"
-                and (room.current_occupancy < room.capacity or (self.current_student and self.current_student.room_id == room.id))
+                if room["status"] != "maintenance"
+                and (room["current_occupancy"] < room["capacity"] or current_room_id == room["id"])
             ]
             available_slots = sum(
-                max(0, room.capacity - room.current_occupancy)
+                max(0, room["capacity"] - room["current_occupancy"])
                 for room in rooms
-                if room.status.value != "maintenance"
+                if room["status"] != "maintenance"
             )
             self.total_chip.setText(f"{len(selectable_rooms)} phòng khả dụng")
             self.capacity_chip.setText(f"{available_slots} chỗ trống")
             self.maintenance_chip.setText(
-                f"Đã chọn: {self.current_student.room.room_number}"
-                if self.current_student and self.current_student.room
-                else "Chưa chọn phòng"
+                f"Đã chọn: {current_room_number}" if current_room_number else "Chưa chọn phòng"
             )
             self.update_student_action_state()
             return
 
-        total_capacity = sum(room.capacity for room in rooms)
-        total_occupancy = sum(room.current_occupancy for room in rooms)
+        total_capacity = sum(room["capacity"] for room in rooms)
+        total_occupancy = sum(room["current_occupancy"] for room in rooms)
         self.total_chip.setText(f"{len(rooms)} phòng")
-        self.capacity_chip.setText(f"{total_occupancy}/{total_capacity} chỗ sử dụng" if total_capacity else "0 chỗ sử dụng")
-        self.maintenance_chip.setText(f"{sum(1 for room in rooms if room.status.value == 'maintenance')} bảo trì")
-
-    def populate_table(self, rooms):
-        self.table.setRowCount(0)
-        selected_row = -1
-        current_room_id = self.current_student.room_id if self.is_student_mode and self.current_student else None
-
-        for row_index, room in enumerate(rooms):
-            self.table.insertRow(row_index)
-            values = [
-                str(room.id),
-                room.room_number,
-                room.room_type or "--",
-                str(room.capacity),
-                str(room.current_occupancy),
-                format_currency(room.price),
-                room_status_label(room.status),
-            ]
-            for column, value in enumerate(values):
-                self.table.setItem(row_index, column, QTableWidgetItem(value))
-            if current_room_id and room.id == current_room_id:
-                selected_row = row_index
-
-        if selected_row >= 0:
-            self.table.selectRow(selected_row)
+        self.capacity_chip.setText(
+            f"{total_occupancy}/{total_capacity} chỗ sử dụng" if total_capacity else "0 chỗ sử dụng"
+        )
+        self.maintenance_chip.setText(
+            f"{sum(1 for room in rooms if room['status'] == 'maintenance')} bảo trì"
+        )
 
     def get_selected_room_id(self):
         row_index = self.table.currentRow()
@@ -238,6 +291,7 @@ class RoomView(QWidget):
             QMessageBox.warning(self, "Chưa chọn dữ liệu", "Vui lòng chọn một phòng để chỉnh sửa.")
             return
 
+        self.room_service.reset_session()
         room = self.room_service.get_room_by_id(room_id)
         dialog = RoomDialog(self, room=room)
         if not dialog.exec_():
@@ -267,6 +321,7 @@ class RoomView(QWidget):
             QMessageBox.information(self, "Thông tin", "Phòng này đã được gắn với hồ sơ của bạn.")
             return
 
+        self.room_service.reset_session()
         room = self.room_service.get_room_by_id(room_id)
         if not room:
             QMessageBox.warning(self, "Không tìm thấy dữ liệu", "Phòng đã chọn không còn tồn tại.")
@@ -334,6 +389,7 @@ class RoomView(QWidget):
         dialog.exec_()
 
     def dispose(self):
+        self.teardown_async_loader()
         self.room_service.close()
         self.exchange_service.close()
         if self.student_service is not None:
